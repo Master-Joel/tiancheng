@@ -11,8 +11,8 @@ operation_test = pd.read_csv('../input/operation_round1.csv')
 transaction_trn = pd.read_csv('../input/transaction_TRAIN.csv')
 transaction_test = pd.read_csv('../input/transaction_round1.csv')
 tag_trn = pd.read_csv('../input/tag_TRAIN.csv')
-
-# ===================================处理操作详情=====================================#
+asd
+# ===================================处理操作详情===================================== #
 
 operation_trn = pd.merge(operation_trn, tag_trn, how='left', on='UID')
 operation_test['Tag'] = -1
@@ -54,10 +54,10 @@ for i in range(1, 5):
 
 del df['geo_code']
 
-# ===================================训练操作数据=====================================#
+# ===================================训练操作数据===================================== #
 xx_auc = []
 xx_submit = []
-N = 3
+N = 5
 skf = StratifiedKFold(n_splits=N, random_state=42, shuffle=True)
 
 params = {
@@ -65,7 +65,7 @@ params = {
     'objective': 'binary',
     #'max_depth': 3,
     'metric': 'auc',
-    'num_leaves': 31,
+    'num_leaves': 31, #31
     'learning_rate': 0.02,
     'feature_fraction': 0.9,
     'bagging_fraction': 0.8,
@@ -88,7 +88,7 @@ for k, (train_in, test_in) in enumerate(skf.split(X, y)):
 
     gbm = lgb.train(params,
                     lgb_train,
-                    num_boost_round=2000,
+                    num_boost_round=3000,
                     valid_sets=lgb_eval,
                     early_stopping_rounds=30,
                     verbose_eval=100,
@@ -136,7 +136,7 @@ y = np.array(df[df.Tag != -1]['Tag'])
 test = np.array(df[df.Tag == -1].drop(['Tag', 'UID'], axis=1))
 xx_auc = []
 xx_submit = []
-N = 3
+N = 5
 
 for k, (train_in, test_in) in enumerate(skf.split(X, y)):
     print('train _K_ flod', k)
@@ -147,7 +147,7 @@ for k, (train_in, test_in) in enumerate(skf.split(X, y)):
 
     gbm = lgb.train(params,
                     lgb_train,
-                    num_boost_round=2000,
+                    num_boost_round=3000,
                     valid_sets=lgb_eval,
                     early_stopping_rounds=30,
                     verbose_eval=100,
@@ -169,10 +169,32 @@ test2.columns = ['UID', 'Tag']
 test2['Tag'] = test2['Tag'].apply(lambda x: 1 if x > 1 else x)
 test2['Tag'] = test2['Tag'].apply(lambda x: 0 if x < 0 else x)
 
-test1 = pd.concat([test1, test2])
+# ===================================合并预测结果=====================================#
+flag = 2
 
-test_index = test1.groupby('UID').Tag.mean().index
-Tag = test1.groupby('UID').Tag.mean().values
-test1 = pd.DataFrame(test_index)
-test1['Tag'] = Tag
-#test1[['UID','Tag']].to_csv('../submit/result.csv', index = False)
+if flag==1:
+    # =====================重合的使用test1的结果=====================#0.78
+    u2 = set(test2.UID.values) - set(test1.UID.values)
+    res = pd.concat([test1, test2[test2.UID.isin(u2)]])
+    test_index = res.groupby('UID').Tag.mean().index
+    Tag = res.groupby('UID').Tag.mean().values
+    res = pd.DataFrame(test_index)
+    res['Tag'] = Tag
+elif flag==2:
+    # =====================重合的使用test2的结果=====================#0.92
+    u1 = set(test1.UID.values) - set(test2.UID.values)
+    res = pd.concat([test1[test1.UID.isin(u1)], test2])
+    test_index = res.groupby('UID').Tag.mean().index
+    Tag = res.groupby('UID').Tag.mean().values
+    res = pd.DataFrame(test_index)
+    res['Tag'] = Tag
+else:
+    # =====================重合的做平均=====================#0.91
+    res = pd.concat([test1, test2])
+    test_index = res.groupby('UID').Tag.mean().index
+    Tag = res.groupby('UID').Tag.mean().values
+    res = pd.DataFrame(test_index)
+    res['Tag'] = Tag
+
+
+#res[['UID','Tag']].to_csv('../submit/result.csv', index = False)
