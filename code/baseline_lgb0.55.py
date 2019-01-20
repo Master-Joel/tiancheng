@@ -9,13 +9,13 @@ import pickle
 # 如果用embedding 每个字段用户每个字段所有记录转成向量累加再平均，可以表示总体趋势
 
 operation_trn = pd.read_csv('../input/operation_TRAIN_new.csv')
-operation_test = pd.read_csv('../input/operation_round1_new.csv')
+operation_test = pd.read_csv('../input/test_operation_round2.csv')
 transaction_trn = pd.read_csv('../input/transaction_TRAIN_new.csv')
-transaction_test = pd.read_csv('../input/transaction_round1_new.csv')
+transaction_test = pd.read_csv('../input/test_transaction_round2.csv')
 tag_trn = pd.read_csv('../input/tag_TRAIN_new.csv')
-tag_test = pd.read_csv('../input/submission_sample.csv')
+tag_test = pd.read_csv('../input/submit_example_2.csv')
 
-load_file=open("Uni.bin","rb")
+load_file =open("Uni.bin","rb")
 val_UID=pickle.load(load_file)
 load_file.close()
 
@@ -156,7 +156,9 @@ for each in l:
     tmp = op.groupby('UID')[each].nunique().reset_index()
     tmp.columns = ['UID', 'op_'+each+'_type']
     label = label.merge(tmp, on='UID', how='left')
-
+    tmp = op.groupby('UID')[each].count().reset_index()
+    tmp.columns = ['UID', 'op_' + each + '_count']
+    label = label.merge(tmp, on='UID', how='left')
 
 # 操作中下列字段各种取值比例 （贝叶斯平滑） 仅仅是每个UID下各个特征取值比例
 for each in ['mode', 'success', 'os', 'version_1']:
@@ -184,11 +186,14 @@ for each in ['mode', 'success', 'os', 'version_1']:
 # 所有每天的交易hour 最大-最小差值 的最大值
 tmp = op.groupby(['UID', 'day']).hour.max() - op.groupby(['UID', 'day']).hour.min()
 tmp = tmp.max(level='UID').reset_index()
+tmp.columns = ['UID', 'day_hour_gap']
 label = label.merge(tmp, on='UID', how='left')
 # 每天平均，最大，最小操作数
 tmp = op.groupby(['UID', 'day']).hour.count().max(level='UID').reset_index()
+tmp.columns = ['UID', 'op_day_max']
 label = label.merge(tmp, on='UID', how='left')
 tmp = op.groupby(['UID', 'day']).hour.count().min(level='UID').reset_index()
+tmp.columns = ['UID', 'op_day_min']
 label = label.merge(tmp, on='UID', how='left')
 label['op_count_mean'] = label['op_count'] / label['op_day_type']
 
@@ -231,6 +236,9 @@ for each in l:
     # 每个UID 交易中各个字段出现种类数
     tmp = tran.groupby('UID')[each].nunique().reset_index()
     tmp.columns = ['UID', 'tran_'+each+'_type']
+    label = label.merge(tmp, on='UID', how='left')
+    tmp = tran.groupby('UID')[each].count().reset_index()
+    tmp.columns = ['UID', 'tran_' + each + '_count']
     label = label.merge(tmp, on='UID', how='left')
 
 # 交易中数值特征
@@ -292,11 +300,14 @@ for each in ['channel', 'amt_src1', 'trans_type1', 'trans_type2', 'market_type']
 # 交易中 所有每天的交易hour 最大-最小差值 的最大值
 tmp = tran.groupby(['UID', 'day']).hour.max() - tran.groupby(['UID', 'day']).hour.min()
 tmp = tmp.max(level='UID').reset_index()
+tmp.columns = ['UID', 'tran_hour_gap']
 label = label.merge(tmp, on='UID', how='left')
 # 每天平均，最大，最小交易数
 tmp = tran.groupby(['UID', 'day']).hour.count().max(level='UID').reset_index()
+tmp.columns = ['UID', 'tran_day_max']
 label = label.merge(tmp, on='UID', how='left')
 tmp = tran.groupby(['UID', 'day']).hour.count().min(level='UID').reset_index()
+tmp.columns = ['UID', 'tran_day_min']
 label = label.merge(tmp, on='UID', how='left')
 label['tran_count_mean'] = label['tran_count'] / label['tran_day_type']
 
@@ -401,8 +412,7 @@ tran = tran.sort_values('UID',kind='mergesort')
 op['period'] = op_tran[op_tran['type'] == 0]['period']
 tran['period'] = op_tran[op_tran['type'] == 1]['period']
 
-tmp = op_tran.groupby('UID')['period'].max().reset_index()
-label = label.merge(tmp, how='left', on='UID')
+
 # 交易和操作  下列特征在每天/每个时段/会话 每个取值的点击率（sum/count）https://zhuanlan.zhihu.com/p/47807544
 
 
@@ -444,6 +454,9 @@ label = label.merge(tmp, how='left', on='UID')
 #     tmp1= tmp.agg(lambda x: np.mean(pd.Series.mode(x))).reset_index()
 #     tmp1.columns = ['UID', feat_1 + '_rate_mode']
 #     label = label.merge(tmp1, how='left', on='UID')
+
+
+
 
 # 每次会话操作、交易、操作和交易的次数   max，min之类
 tmp = op_tran[op_tran['type'] == 0].groupby(['UID', 'period']).day.count()
@@ -593,6 +606,58 @@ for each in ['hour_period', 'day', 'hour', 'period']:
     label[each + '_len'] = label[ each + '_max'] - label[ each + '_min']
 
 
+# ---------------------------------------------------------计算每个用户一些特殊值占比例，效果没用------------------------------------
+# op = op.merge(tag_trn,how='left',on='UID')
+# tran = tran.merge(tag_trn,how='left',on='UID')
+# tran_dic = {}
+# # trans_amt bal
+# for each in [ 'channel', 'trans_amt', 'amt_src1', 'merchant', 'code1',
+#        'code2', 'trans_type1', 'acc_id1', 'device_code1', 'device_code2',
+#        'device_code3', 'device1', 'device2', 'mac1', 'ip1', 'amt_src2',
+#        'acc_id2', 'acc_id3', 'geo_code', 'trans_type2', 'market_code',
+#        'market_type', 'ip1_sub']:
+#
+#     tmp = tran[tran.Tag == 1].groupby(each).UID.nunique() / tran.groupby(each).UID.nunique()
+#     tmp = tmp.reset_index()
+#     tmp.columns = [each, 'UID_rate']
+#     tmp1 = tran.groupby(each).UID.nunique().reset_index()
+#     tmp1.columns = [each, 'UID_count']
+#     tmp = tmp.merge(tmp1, how='left', on=each)
+#     tran_dic[each] = tmp[(tmp['UID_rate'] > 0.8) & (tmp.UID_count > 40)][each].tolist()
+#
+# op_dic = {}
+# for each in ['mode', 'success', 'os', 'version', 'device1',
+#        'device2', 'device_code1', 'device_code2', 'device_code3', 'mac1',
+#        'mac2', 'ip1', 'ip2', 'wifi', 'geo_code', 'ip1_sub', 'ip2_sub']:
+#
+#     tmp = op[op.Tag == 1].groupby(each).UID.nunique() / op.groupby(each).UID.nunique()
+#     tmp = tmp.reset_index()
+#     tmp.columns = [each, 'UID_rate']
+#     tmp1 = op.groupby(each).UID.nunique().reset_index()
+#     tmp1.columns = [each, 'UID_count']
+#     tmp = tmp.merge(tmp1, how='left', on=each)
+#     op_dic[each] = tmp[(tmp['UID_rate'] > 0.8) & (tmp.UID_count > 40)][each].tolist()
+#
+#
+# for fe in tran_dic.keys():
+#     for v in tran_dic[fe]:
+#         tmp = tran[tran[fe] == v].groupby('UID').day.count() / tran.groupby('UID').day.count()
+#         tmp = tmp.fillna(0).apply(lambda x: 1 if x > 0 else 0)
+#         tmp = tmp.reset_index()
+#         tmp.columns = ['UID', v]
+#         label = label.merge(tmp, on='UID', how='left')
+#     print(fe+' done')
+#
+# for fe in op_dic.keys():
+#     for v in op_dic[fe]:
+#         tmp = op[op[fe] == v].groupby('UID').day.count() / op.groupby('UID').day.count()
+#         tmp = tmp.fillna(0).apply(lambda x: 1 if x > 0 else 0)
+#         tmp = tmp.reset_index()
+#         tmp.columns = ['UID', v]
+#         label = label.merge(tmp, on='UID', how='left')
+#     print(fe+' done')
+#
+
 # ----------------------------------------------------------------------------------------------------------#
 train = label.iloc[:num]
 test = label.iloc[num:]
@@ -617,6 +682,7 @@ def tpr_weight_funtion(y_true,y_predict):
 
 params = {
     'boosting_type': 'gbdt',
+    'metric':'auc',
     'objective': 'binary',
     'learning_rate': 0.02,
     'feature_fraction': 0.8,
@@ -636,19 +702,18 @@ N = 5
 test_id = test.UID
 test.drop(['UID', 'Tag'], axis=1, inplace=True)
 
-
 submit = []
 
 # 验证
-if 1:
+if 0:
     feature = train.columns.tolist()
     feature.remove('Tag')
     feature.remove('UID')
-    X_train = train[~train['UID'].isin(val_UID)]
+    X_train = train[~train['UID'].isin(val_UID)].fillna(0)
     y_train = X_train['Tag']
     del X_train['Tag']
     del X_train['UID']
-    X_val = train[train['UID'].isin(val_UID)]
+    X_val = train[train['UID'].isin(val_UID)].fillna(0)
     y_val = X_val['Tag']
     del X_val['Tag']
     del X_val['UID']
@@ -698,4 +763,4 @@ else:
 
     res = pd.DataFrame(test_id)
     res['Tag'] = Tag
-    res.to_csv('../submit/result.csv', index=False)
+    res.to_csv('../submit/result2.csv.csv', index=False)
